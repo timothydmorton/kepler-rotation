@@ -16,7 +16,7 @@ import keprot
 
 
 setup(name = "keprot",
-    version = isochrones.__version__,
+    version = keprot.__version__,
     description = "Estimating rotation periods from Kepler photometry",
     long_description = readme(),
     author = "Timothy D. Morton",
@@ -31,6 +31,6 @@ setup(name = "keprot",
       'Programming Language :: Python',
       'Topic :: Scientific/Engineering :: Astronomy'
       ],
-    #install_requires=['plotutils','pandas>=0.14','astropy>=0.3','emcee>=2.0'],
+    install_requires=['acor>=1.1.1'],
     zip_safe=False
 ) 
