@@ -11,6 +11,9 @@ from scipy.optimize import leastsq, curve_fit
 
 from scipy.signal import lombscargle
 
+from pkg_resources import resource_filename
+
+
 import logging
 
 from keputils import koiutils as ku
@@ -26,10 +29,10 @@ except KeyError:
     KOI_PHOTOMETRY_DIR = '.'
 
 CADENCE = 0.02043423
-QSTARTSTOP = np.recfromtxt('qStartStop.txt',names=True)
+QTIMESFILE = resource_filename('keprot','qStartStop.txt')
 QSTART = {}
 QSTOP = {}
-for line in open('qStartStop.txt'):
+for line in open(QTIMESFILE):
     line = line.split()
     if line[0] != 'q':
         QSTART[int(line[0])] = float(line[1])
@@ -50,8 +53,8 @@ class TimeSeries(object):
         self.default_maxlag = default_maxlag
 
         #set private variables for cached acorr calculation
-        self._lag = None
-        self._ac = None
+        self._lag = None  #always should be in cadences
+        self._ac = None 
 
         #private variables for caching pgram calculation
         self._pers = None
@@ -224,7 +227,7 @@ class TimeSeries(object):
         data = pd.DataFrame({'t':self.t,
                              'f':self.f,
                              'mask':self.mask})
-        lag, ac = self.acorr()
+        lag, ac = self.acorr(days=False)
         acorr = pd.DataFrame({'lag':lag,
                               'ac':ac})
 
@@ -271,6 +274,9 @@ class TimeSeries(object):
 
 class TimeSeries_FromH5(TimeSeries):
     def __init__(self, filename, path=''):
+
+        self.filename = filename
+        self.path = path
 
         store = pd.HDFStore(filename, 'r')
         data = store['{}/data'.format(path)]
@@ -409,7 +415,7 @@ def peaks_and_lphs(y, x=None, lookahead=5, return_heights=False):
     
 
 def acorr_peaks(fs, mask=None, lookahead=5, smooth=18, maxlag=200//CADENCE,
-                return_acorr=False):
+                return_acorr=False, days=True):
     """Returns positions of acorr peaks, with corresponding local heights.
     """
     fs = np.atleast_1d(fs)
