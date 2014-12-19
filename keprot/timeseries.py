@@ -50,8 +50,6 @@ class TimeSeries(object):
         self.default_maxlag = default_maxlag
 
         #set private variables for cached acorr calculation
-        self._maxlag = 0
-        self._smooth = None
         self._lag = None
         self._ac = None
 
@@ -65,7 +63,7 @@ class TimeSeries(object):
             maxlag = self.default_maxlag
 
         #don't recalculate the same thing if not necessary
-        if maxlag==self._maxlag and smooth==self._smooth and not recalc:
+        if self._ac is not None and not recalc:
             lag = self._lag
             ac = self._ac
         else:
@@ -250,7 +248,7 @@ class TimeSeries(object):
 
         if hasattr(self,'subseries'):
             for name in self.subseries:
-                self.subseries[name].save_hdf(filename, path='sub/{}'.format(name))
+                self.subseries[name].save_hdf(filename, path=name)
 
     def make_subseries(self,tlist,names=None):
         """Splits up timeseries into chunks, according to tlist
@@ -259,7 +257,7 @@ class TimeSeries(object):
         those names will be used; otherwise 'sub1', 'sub2', etc.
         """
         if names is None:
-            names = ['sub{}'.format(i) for i in range(len(tlist))]
+            names = ['sub{}'.format(i) for i in 1+np.arange(len(tlist))]
 
         self.subseries = {}
         for (tlo,thi),name in zip(tlist,names):
@@ -270,6 +268,38 @@ class TimeSeries(object):
             self.subseries[name] = TimeSeries(t, f, mask=mask,
                                               default_maxlag=self.default_maxlag)
 
+
+class TimeSeries_FromH5(TimeSeries):
+    def __init__(self, filename, path=''):
+
+        store = pd.HDFStore(filename, 'r')
+        data = store['{}/data'.format(path)]
+        t = np.array(data['t'])
+        f = np.array(data['f'])
+        mask = np.array(data['mask'])
+
+        TimeSeries.__init__(self, t,f,mask=mask)
+
+        acorr = store['{}/acorr'.format(path)]
+        self._lag = np.array(acorr['lag'])
+        self._ac = np.array(acorr['ac'])
+
+        pgram = store['{}/pgram'.format(path)]
+        self._pers = np.array(pgram['period'])
+        self._pgram = np.array(pgram['pgram'])
+
+        i=1
+        has_sub = True
+        self.subseries = {}
+        while has_sub:
+            try:
+                name = 'sub{}'.format(i)
+                self.subseries[name] = TimeSeries_FromH5(filename, path='{}/{}'.format(path,name))
+            except KeyError:
+                has_sub = False
+            i += 1
+                
+        store.close()
 
 class Kepler_TimeSeries_Petigura(TimeSeries):
     def __init__(self, koi, folder=KOI_PHOTOMETRY_DIR, 
@@ -348,8 +378,8 @@ class Kepler_TimeSeries_Petigura(TimeSeries):
         
     def make_subseries(self,qlist=[(3,5),(6,8),(9,11),(12,15)]):
         tlist = [(QSTART[tlo],QSTOP[thi]) for tlo,thi in qlist]
-        names = ['q{}q{}'.format(tlo,thi) for tlo,thi in qlist]
-        TimeSeries.make_subseries(self, tlist, names=names)
+        #names = ['q{}q{}'.format(tlo,thi) for tlo,thi in qlist]
+        TimeSeries.make_subseries(self, tlist)
         
 
 def peaks_and_lphs(y, x=None, lookahead=5, return_heights=False):

@@ -24,6 +24,7 @@ setup(name = "keprot",
     url = "https://github.com/timothydmorton/kepler-rotation",
     packages = find_packages(),
     #package_data = {'':['data/*']},
+    scripts = ['scripts/prepare_photometry'],
     classifiers=[
       'Development Status :: 3 - Alpha',
       'Intended Audience :: Science/Research',
