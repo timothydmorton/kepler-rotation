@@ -29,7 +29,7 @@ except KeyError:
     KOI_PHOTOMETRY_DIR = '.'
 
 CADENCE = 0.02043423
-QTIMESFILE = resource_filename('keprot','qStartStop.txt')
+QTIMESFILE = resource_filename('keprot','data/qStartStop.txt')
 QSTART = {}
 QSTOP = {}
 for line in open(QTIMESFILE):
@@ -278,21 +278,26 @@ class TimeSeries_FromH5(TimeSeries):
         self.filename = filename
         self.path = path
 
-        store = pd.HDFStore(filename, 'r')
-        data = store['{}/data'.format(path)]
+        #store = pd.HDFStore(filename, 'r')
+        data = pd.read_hdf(filename, '{}/data'.format(path))
+        #data = store['{}/data'.format(path)]
         t = np.array(data['t'])
         f = np.array(data['f'])
         mask = np.array(data['mask'])
 
         TimeSeries.__init__(self, t,f,mask=mask)
 
-        acorr = store['{}/acorr'.format(path)]
+        #acorr = store['{}/acorr'.format(path)]
+        acorr = pd.read_hdf(filename, '{}/acorr'.format(path))
         self._lag = np.array(acorr['lag'])
         self._ac = np.array(acorr['ac'])
 
-        pgram = store['{}/pgram'.format(path)]
+        #pgram = store['{}/pgram'.format(path)]
+        pgram = pd.read_hdf(filename, '{}/pgram'.format(path))
         self._pers = np.array(pgram['period'])
         self._pgram = np.array(pgram['pgram'])
+
+        #store.close()
 
         i=1
         has_sub = True
@@ -305,7 +310,6 @@ class TimeSeries_FromH5(TimeSeries):
                 has_sub = False
             i += 1
                 
-        store.close()
 
 class Kepler_TimeSeries_Petigura(TimeSeries):
     def __init__(self, koi, folder=KOI_PHOTOMETRY_DIR, 

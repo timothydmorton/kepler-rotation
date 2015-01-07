@@ -2,7 +2,7 @@
 """
 
 """
-import os, os.path, glob
+import os, os.path, glob, re
 import pprint
 import random
 import wx
@@ -27,15 +27,15 @@ from keprot.timeseries import TimeSeries_FromH5
 
 DATADIR = '{}/rotation'.format(os.environ['KOI_PHOTOMETRY_DIR'])
 
-filelist = glob.glob('{}/*.h5')
+filelist = glob.glob('{}/*.h5'.format(DATADIR))
 ALLKOIS = []
 for f in filelist:
-    m = re.search('(K\d\d\d\d\d)\.h5')
+    m = re.search('(K\d\d\d\d\d)\.h5',f)
     ALLKOIS.append(m.group(1))
+ALLKOIS = np.array(ALLKOIS)
+ALLKOIS.sort()
 
-ALLKOIS = np.sort(rot.ALLKOIS)
-
-PROTFILE = resource_filename('keprot','prots.pkl')
+PROTFILE = resource_filename('keprot','data/prots.pkl')
 
 def load_prots(filename=PROTFILE):
     try:
@@ -66,6 +66,9 @@ class MainFrame(wx.Frame):
         i = 0
         while self.prot_already_selected(ALLKOIS[i]):
             i += 1
+            if i > len(ALLKOIS):
+                i=0
+                break
             
         self.koi_index = i
         self.koi = ku.koiname(ALLKOIS[i],star=True)
@@ -73,7 +76,8 @@ class MainFrame(wx.Frame):
         self.set_koi_info()  #sets self.ncandidates, self.koi_periods, self.koi_teff, self.koi_sparprov
 
         
-        #self.npeaks = 5
+        self.npeaks = 5
+        
         #self.lookahead = 5 # for peak detection
         #self.prot_tolerance = 0.1
 
@@ -81,12 +85,21 @@ class MainFrame(wx.Frame):
                          # and all pgram, acorr, smooth_acorr data
         
         #read in timeseries data
-        self.get_data()
+        try:
+            self.get_data()
+        except:
+            print('Data not available for {}.  Setting active KOI to first KOI in folder.'.format(self.koi))
+            self.koi_index = 0
+            self.koi = ku.koiname(ALLKOIS[0], star=True)
+            self.get_data()
 
-        #self.find_best_guesses() # sets self.prot_best_guesses
+        self.find_best_guesses() # sets self.prot_best_guesses
         #print self.prot_best_guesses
 
-        period,e_period = self.data.acorr_period_fit()
+        if self.koi in self.prot_dict:
+            period = self.prot_dict[self.koi]['prot_best']
+        else:
+            period,e_period = self.data.acorr_period_fit()
         self.prot_guess = period
 
 
@@ -133,7 +146,10 @@ class MainFrame(wx.Frame):
                                        s.t[~s.mask], 
                                        s.f[~s.mask],
                                        prot_guess=self.prot_guess))
-                                       
+                             
+
+        lag, ac = self.data.acorr()
+        self.acplot = ACPlot(self.panel, -1, lag, ac, prot_guess=self.prot_guess)
 
         #for q in self.qtrs:
         #    #print 'setting up quarter %i' % q
@@ -188,6 +204,9 @@ class MainFrame(wx.Frame):
         self.Bind(wx.EVT_BUTTON, self.on_select_poor, self.prot_select_poor_button)
         self.prot_select_none_button = wx.Button(self.panel, -1, 'none')
         self.Bind(wx.EVT_BUTTON, self.on_select_none, self.prot_select_none_button)
+        self.prot_select_multiple_button = wx.Button(self.panel, -1, 'multiple?')
+        self.Bind(wx.EVT_BUTTON, self.on_select_multiple, self.prot_select_multiple_button)
+
         self.prot_select_hbox.Add(wx.StaticText(self.panel,label='select current: '))
         self.prot_select_hbox.Add(self.prot_select_good_button, 0, wx.LEFT | wx.TOP | wx.BOTTOM,
                                   border=2)
@@ -198,6 +217,8 @@ class MainFrame(wx.Frame):
         self.prot_select_hbox.Add(self.prot_select_poor_button, 0, wx.LEFT | wx.TOP | wx.BOTTOM,
                                   border=2)
         self.prot_select_hbox.Add(self.prot_select_none_button, 0, wx.LEFT | wx.TOP | wx.BOTTOM,
+                                  border=2)
+        self.prot_select_hbox.Add(self.prot_select_multiple_button, 0, wx.LEFT | wx.TOP | wx.BOTTOM,
                                   border=2)
 
 
@@ -213,21 +234,38 @@ class MainFrame(wx.Frame):
         self.koi_navigate_hbox.Add(self.prevkoi_button, 0, wx.LEFT | wx.TOP | wx.BOTTOM, border=3)
         self.koi_navigate_hbox.Add(self.nextkoi_button, 0, wx.LEFT | wx.TOP | wx.BOTTOM, border=3)
 
-        #self.koi_label = wx.StaticText(self, label=self.koi)
-        #
-        # Layout with box sizers
-        #
+
+        self.info_action_box = wx.BoxSizer(wx.VERTICAL)
+        flags = wx.LEFT | wx.TOP | wx.RIGHT
+        self.info_action_box.Add(self.koi_navigate_hbox, 0, flags, border=5)
+        self.info_action_box.Add(self.prot_status_hbox, 0, flags)
+        self.info_action_box.Add(self.prot_guesses_hbox, 0, flags, border=3)
+        self.info_action_box.Add(self.prot_select_hbox, 0, flags, border=3)
+        self.info_action_box.Add(self.koi_info_hbox, 0, flags, border=5)
+
+        self.ac_plot_box = wx.BoxSizer(wx.VERTICAL)
+        flags = wx.EXPAND
+        self.ac_plot_box.Add(self.acplot, 0, flags, border=4)
+
         
+        self.top_box = wx.BoxSizer(wx.HORIZONTAL)
+        flags = wx.EXPAND
+        self.top_box.Add(self.info_action_box, 0, flags)
+        self.top_box.Add(self.ac_plot_box, 0, flags)
+
+        #Final layout
         self.vbox = wx.BoxSizer(wx.VERTICAL)
         self.flags = wx.LEFT | wx.TOP | wx.RIGHT
 
         #self.vbox.Add(self.koi_label, 0, self.flags)
 
-        self.vbox.Add(self.koi_navigate_hbox, 0, self.flags, border=5)
-        self.vbox.Add(self.prot_status_hbox, 0, self.flags)
-        self.vbox.Add(self.prot_guesses_hbox, 0, self.flags, border=3)
-        self.vbox.Add(self.prot_select_hbox, 0, self.flags, border=3)
-        self.vbox.Add(self.koi_info_hbox, 0, self.flags, border=5)
+        self.vbox.Add(self.top_box, 0, self.flags)
+
+        #self.vbox.Add(self.koi_navigate_hbox, 0, self.flags, border=5)
+        #self.vbox.Add(self.prot_status_hbox, 0, self.flags)
+        #self.vbox.Add(self.prot_guesses_hbox, 0, self.flags, border=3)
+        #self.vbox.Add(self.prot_select_hbox, 0, self.flags, border=3)
+        #self.vbox.Add(self.koi_info_hbox, 0, self.flags, border=5)
 
         for lc in self.lcplots:
             self.vbox.Add(lc, 1, self.flags | wx.EXPAND, border=2)
@@ -254,28 +292,35 @@ class MainFrame(wx.Frame):
         self.koi_info_txt.SetLabel(self.koi_info_string())
 
     def koi_info_string(self):
-        txt = '%s: %i K (%s)  koi periods: ' % (self.koi,self.koi_teff,self.koi_sparprov)
+        txt = '{}: {} K ({})  koi periods: '.format(self.koi,self.koi_teff,self.koi_sparprov)
         for per in self.koi_periods:
             txt += '%.3fd ' % per
         return txt
 
     def get_data(self):
         filename = '{}/{}.h5'.format(DATADIR,self.koi)
-        self.data = TimeSeries_FromH5(filename)
 
         self.pgram_pks = {}
         self.acorr_pks = {}
+
+        self.pgram_hts = {}
+        self.acorr_hts = {}
                                        
+        self.data = TimeSeries_FromH5(filename)
+
         npeaks = self.npeaks
         
         for name in self.data.subseries.keys():
-            s = self.data.subseries[s]
+            s = self.data.subseries[name]
             ac_peaks, ac_lphs = s.acorr_peaks()
             pg_peaks, pg_hts = s.pgram_peaks()
 
             inds = np.argsort(ac_lphs)
             self.acorr_pks[name] = ac_peaks[inds][::-1][:npeaks]
             self.pgram_pks[name] = pg_peaks[:npeaks]
+
+            self.acorr_hts[name] = ac_lphs[inds][::-1][:npeaks]
+            self.pgram_hts[name] = pg_hts[:npeaks]
 
           
 
@@ -360,13 +405,21 @@ class MainFrame(wx.Frame):
         #txt += ']'
         #print txt
 
-    def set_qtrs(self):
-        for q,lc in zip(self.qtrs,self.lcplots):
-            w = np.where((self.time >= QSTART[q]) & (self.time <= QSTOP[q])
-                         & ~(self.mask))
-            lc.set_data(self.time[w],self.flux[w])
-            lc.set_koi(self.koi,q)
+    def set_acplot(self):
+        lag, ac = self.data.acorr()
+        self.acplot.set_data(lag, ac)
 
+    def set_lcplots(self):
+        for name,lc in zip(self.data.subseries.keys(),self.lcplots):
+            s = self.data.subseries[name]
+            lc.set_data(s.t[~s.mask], s.f[~s.mask])
+            lc.set_koi(self.koi, name)
+        #for q,lc in zip(self.qtrs,self.lcplots):
+        #    w = np.where((self.time >= QSTART[q]) & (self.time <= QSTOP[q])
+        #                 & ~(self.mask))
+        #    lc.set_data(self.time[w],self.flux[w])
+        #    lc.set_koi(self.koi,q)
+        pass
 
     def approx(self,per,per2=None):
         if per2 is None:
@@ -374,6 +427,7 @@ class MainFrame(wx.Frame):
         return np.absolute(np.log10(per/per2)) < np.log10(1+self.prot_tolerance)
 
     def order_qtrs(self):
+        return
         #determine order of quarters
         hts = np.zeros(len(self.allqtrs))
         pers = np.zeros(len(self.allqtrs))
@@ -409,41 +463,24 @@ class MainFrame(wx.Frame):
         #set prot for each plot
         for lc in self.lcplots:
             lc.set_prot(prot)
-
-        self.order_qtrs()
-        self.set_qtrs()
         
+        self.acplot.set_prot(prot)
+
+        #self.order_qtrs()
+        #self.set_lcplots()
+        #self.set_acplot()
+
     def draw_plots(self):
-        """Redraws each lc plot
+        """Redraws each lc plot (and ac plot)
         """
         for lc in self.lcplots:
             lc.draw_figure()
 
+        self.acplot.draw_figure()
+
     def find_best_guesses(self):
-        if len(self.all_pks)==0:
-            self.prot_best_guesses = [-1]
-            return
-        k = kde(self.all_pks)
-        ps = np.arange(0,50,0.01)
-        maxes,mins = rot.peakdetect(k(ps),ps,lookahead=1)
-        maxes = np.array(maxes)
-        mins = np.array(mins)
-        pks = maxes[:,0]
-        hts = maxes[:,1]
-        inds = np.argsort(hts)[::-1]
-        self.prot_best_guesses = pks[inds]
-        return
-    
-        #remove guesses close to KOI period?
-        guesses = pks[inds]
-        idelete = []
-        for i,p in enumerate(guesses):
-            for koip in self.koi_periods:
-                if self.approx(p,koip):
-                    idelete.append(i)
-                    print 'guess %.2f too close to koi period %.2f' % (p,koip)
-        guesses = np.delete(guesses,idelete)
-        self.prot_best_guesses = guesses
+        pks, lphs = self.data.acorr_peaks()
+        self.prot_best_guesses = pks[:2]
 
     def set_prot_guesses_label(self):
         self.prot_guesses_label.SetLabel('best guesses: %s' % self.prot_best_guesses)
@@ -453,14 +490,16 @@ class MainFrame(wx.Frame):
         self.set_koi_info()
         self.update_koi_info()
         self.get_data()
-        if len(self.all_pks) == 0:
-            print 'No data for %s' % self.koi
+        #if len(self.all_pks) == 0:
+        #    print 'No data for %s' % self.koi
         self.find_best_guesses()
         self.set_prot(self.prot_best_guesses[0])
         self.set_prot_guesses_label()
         self.set_prot_status_txt()
-        self.order_qtrs()
-        self.set_qtrs()
+
+        self.set_lcplots()
+        self.set_acplot()
+
         self.draw_plots()
 
     def on_enter_koi(self,event):
@@ -470,6 +509,7 @@ class MainFrame(wx.Frame):
         self.on_enter_koi(event)
 
     def get_koi_index(self):
+        return np.where(ALLKOIS==self.koi)[0][0]
         ckoi = 'C' + self.koi
         if ALLKOIS[self.koi_index] != ckoi:
             self.koi_index = np.where(ALLKOIS==ckoi)[0][0]
@@ -504,6 +544,8 @@ class MainFrame(wx.Frame):
                 self.prot_status_txt.SetForegroundColour('Gold')
             elif q=='poor':
                 self.prot_status_txt.SetForegroundColour('Sienna')
+            elif q=='multiple':
+                self.prot_status_txt.SetForegroundColour('magenta')
         else:
             self.prot_status_txt.SetLabel('no prot selected')
             self.prot_status_txt.SetForegroundColour('red')
@@ -531,10 +573,13 @@ class MainFrame(wx.Frame):
         i = self.get_koi_index() + 1
         while self.prot_already_selected(ALLKOIS[i]):
             i += 1
+            if i > len(ALLKOIS):
+                i=0
+                break
         self.set_koi(ALLKOIS[i])
 
     def prot_already_selected(self,koi):
-        return ku.koiname(koi,star=True) in self.prot_dict
+        return ku.koistar(koi) in self.prot_dict
 
     def on_select_good(self,event):
         self.select_prot('good')
@@ -547,6 +592,9 @@ class MainFrame(wx.Frame):
 
     def on_select_poor(self,event):
         self.select_prot('poor')
+
+    def on_select_multiple(self,event):
+        self.select_prot('multiple')
 
     def on_select_none(self,event):
         self.prot_guess = -1
@@ -616,6 +664,70 @@ class MainFrame(wx.Frame):
     def on_flash_status_off(self, event):
         self.statusbar.SetStatusText('')
 
+class ACPlot(wx.Panel):
+    def __init__(self, parent, ID, lag=None, ac=None,
+                 prot_guess=None):
+        wx.Panel.__init__(self, parent, ID)
+
+        self.prot_guess = prot_guess
+
+        # Set up the MPL objects
+        self.dpi = 100
+        self.fig = Figure((8.0,2.0), dpi=self.dpi)
+        self.canvas = FigCanvas(self, -1, self.fig)
+        self.axes = self.fig.add_axes([.1,0.1,0.8,0.8])
+        # Bind the 'pick' event for clicking on the plot
+        #
+        self.canvas.mpl_connect('button_press_event', self.on_click)
+
+        #self.toolbar = NavigationToolbar(self.canvas)
+        #self.toolbar.Realize()
+        #self.toolbar.update()
+        #self.toolbar.Hide()
+        #self.toolbar.pan()
+
+        self.set_data(lag, ac)
+        
+        #final layout
+        self.hbox = wx.BoxSizer(wx.HORIZONTAL)
+        flags = wx.EXPAND
+        self.hbox.Add(self.canvas, 1, flags)
+
+        self.SetSizer(self.hbox)
+        self.hbox.Fit(self)
+
+    def draw_figure(self):
+        self.axes.clear()
+
+        self.axes.plot(self.lag, self.ac, lw=2)
+
+        if self.prot_guess is not None:
+            maxlag = min(6*self.prot_guess, self.lag.max())
+            self.axes.set_xlim((0,maxlag))
+            [self.axes.axvline(l, ls='-', lw=2, color='r') \
+                 for l in self.prot_guess*np.arange(1,6)]
+            pks,hts = self.GetGrandParent().data.acorr_peaks()
+            [self.axes.axvline(l, ls=':', lw=1, color='k') \
+                 for l in pks]
+
+        self.canvas.draw()
+
+    def set_prot(self,prot):
+        self.prot_guess = prot
+        self.draw_figure()
+
+
+    def set_data(self, lag, ac):
+        self.lag = lag
+        self.ac = ac
+
+
+        self.draw_figure()
+        
+    def on_click(self,event):
+        self.GetGrandParent().set_prot(float(event.xdata))
+
+
 class LCPlot(wx.Panel):
     def __init__(self, parent, ID, koi, subname, ts=None, fs=None,
                  tmin=None, tmax=None, prot_guess=None, npeaks=5, lookahead=5,prot_tolerance=0.1):
@@ -645,14 +757,12 @@ class LCPlot(wx.Panel):
         #set up peak info labels
         self.pgram_pk_labels = []
         self.acorr_pk_labels = []
-        #self.smooth_acorr_pk_labels = []
+
         self.pgram_pk_hbox = wx.BoxSizer(wx.HORIZONTAL)
         self.acorr_pk_hbox = wx.BoxSizer(wx.HORIZONTAL)
-        #self.smooth_acorr_pk_hbox = wx.BoxSizer(wx.HORIZONTAL)
 
         self.pgram_pk_hbox.Add(wx.StaticText(self,label='%9s' % 'pgram:')) 
         self.acorr_pk_hbox.Add(wx.StaticText(self,label='%9s' % 'acorr:')) 
-        #self.smooth_acorr_pk_hbox.Add(wx.StaticText(self,label='%9s' % 's_acorr:')) 
         
         for i in range(self.npeaks):
             self.pgram_pk_labels.append(wx.StaticText(self,label='n/a'))
@@ -663,10 +773,6 @@ class LCPlot(wx.Panel):
             self.acorr_pk_labels[i].Bind(wx.EVT_LEFT_DOWN,self.on_label_click)
             self.acorr_pk_hbox.Add(self.acorr_pk_labels[i], 0, wx.ALL | wx.ALIGN_RIGHT)
             
-            #self.smooth_acorr_pk_labels.append(wx.StaticText(self,label='n/a'))
-            #self.smooth_acorr_pk_labels[i].Bind(wx.EVT_LEFT_DOWN,self.on_label_click)
-            #self.smooth_acorr_pk_hbox.Add(self.smooth_acorr_pk_labels[i], 0, wx.ALL | wx.ALIGN_RIGHT)
-
         self.label = wx.StaticText(self,label='')
         self.set_data(ts,fs,tmin=tmin,tmax=tmax)
         self.set_koi(koi,subname)
@@ -675,7 +781,6 @@ class LCPlot(wx.Panel):
         self.peaks_vbox = wx.BoxSizer(wx.VERTICAL)
         self.peaks_vbox.Add(self.pgram_pk_hbox, 0, flags)
         self.peaks_vbox.Add(self.acorr_pk_hbox, 0, flags)
-        #self.peaks_vbox.Add(self.smooth_acorr_pk_hbox, 0, flags)
         
 
         #final layout
@@ -705,34 +810,12 @@ class LCPlot(wx.Panel):
         self.label.SetLabel(self.title)
 
     def set_peakdata(self):
-        try:
-            self.pgram_data = self.GetGrandParent().pgram_data[self.subname]
-            self.acorr_data = self.GetGrandParent().acorr_data[self.subname]
-            #self.smooth_acorr_data = self.GetGrandParent().smooth_acorr_data[self.qtr]
+        self.pgram_pks = self.GetGrandParent().pgram_pks[self.subname]
+        self.acorr_pks = self.GetGrandParent().acorr_pks[self.subname]
 
-            self.pgram_pks = self.GetGrandParent().pgram_pks[self.subname]
-            self.acorr_pks = self.GetGrandParent().acorr_pks[self.subname]
-            #self.smooth_acorr_pks = self.GetGrandParent().smooth_acorr_pks[self.qtr]
+        self.pgram_hts = self.GetGrandParent().pgram_hts[self.subname]
+        self.acorr_hts = self.GetGrandParent().acorr_hts[self.subname]
 
-            self.pgram_hts = self.GetGrandParent().pgram_hts[self.subname]
-            self.acorr_hts = self.GetGrandParent().acorr_hts[self.subname]
-            self.smooth_acorr_hts = self.GetGrandParent().smooth_acorr_hts[self.qtr]
-
-            return
-            #self.pgram_data = rot.pgram_data(self.koi,self.qtr)
-            #self.acorr_data = rot.acorr_data(self.koi,self.qtr)
-            #self.smooth_acorr_data = rot.smooth_acorr_data(self.koi,self.qtr)
-        except KeyError:
-            self.nodata = True
-            self.pgram_pks = np.zeros(self.npeaks)
-            self.acorr_pks = np.zeros(self.npeaks)
-            #self.smooth_acorr_pks = np.zeros(self.npeaks)
-
-            self.pgram_hts = np.zeros(self.npeaks)
-            self.acorr_hts = np.zeros(self.npeaks)
-            #self.smooth_acorr_hts = np.zeros(self.npeaks)
-
-            return
 
     def approx(self,per,per2=None):
         if per2 is None:
@@ -744,38 +827,35 @@ class LCPlot(wx.Panel):
                                self.pgram_pk_labels,
                                self.acorr_pk_labels):
 
-            pg.SetLabel('%5.3g' % self.pgram_pks[i])
-            ac.SetLabel('%5.3g' % self.acorr_pks[i])
-            #sac.SetLabel('%5.3g' % self.smooth_acorr_pks[i])
+            try:
+                pg.SetLabel('%5.3g' % self.pgram_pks[i])
+                ac.SetLabel('%5.3g' % self.acorr_pks[i])
+            except IndexError:
+                continue
+
             if self.approx(self.pgram_pks[i]):
-                pg.SetForegroundColour('white')
-                pg.SetBackgroundColour('blue')
+                #pg.SetForegroundColour('white')
+                #pg.SetBackgroundColour('blue')
+                pg.SetForegroundColour('red')
             elif self.approx(self.pgram_pks[i]/2.) or self.approx(self.pgram_pks[i]*2):
-                pg.SetForegroundColour('black')
-                pg.SetBackgroundColour('green')
+                #pg.SetForegroundColour('black')
+                #pg.SetBackgroundColour('green')
+                pg.SetForegroundColour('blue')
             else:
                 pg.SetForegroundColour('black')
                 pg.SetBackgroundColour('white')
 
             if self.approx(self.acorr_pks[i]):
-                ac.SetForegroundColour('white')
-                ac.SetBackgroundColour('blue')
+                #ac.SetForegroundColour('white')
+                #ac.SetBackgroundColour('blue')
+                ac.SetForegroundColour('red')
             elif self.approx(self.acorr_pks[i]/2.) or self.approx(self.acorr_pks[i]*2):
-                ac.SetForegroundColour('black')
-                ac.SetBackgroundColour('green')
+                #ac.SetForegroundColour('black')
+                #ac.SetBackgroundColour('green')
+                ac.SetForegroundColour('blue')
             else:
                 ac.SetForegroundColour('black')
                 ac.SetBackgroundColour('white')
-
-            #if self.approx(self.smooth_acorr_pks[i]):
-            #    sac.SetForegroundColour('white')
-            #    sac.SetBackgroundColour('blue')
-            #elif self.approx(self.smooth_acorr_pks[i]/2.) or self.approx(self.smooth_acorr_pks[i]*2):
-            #    sac.SetForegroundColour('black')
-            #    sac.SetBackgroundColour('green')
-            #else:
-            #    sac.SetForegroundColour('black')
-            #    sac.SetBackgroundColour('white')
 
     def draw_figure(self):
         self.axes.clear()
