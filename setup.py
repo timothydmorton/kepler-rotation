@@ -11,19 +11,19 @@ if sys.version_info[0] < 3:
     import __builtin__ as builtins
 else:
     import builtins
-builtins.__KEPROT_SETUP__ = True
-import keprot
+builtins.__ROTATION_SETUP__ = True
+import rotation
 
 
-setup(name = "keprot",
-    version = keprot.__version__,
-    description = "Estimating rotation periods from Kepler photometry",
+setup(name = "rotation",
+    version = rotation.__version__,
+    description = "Estimating rotation periods from time-series photometry",
     long_description = readme(),
     author = "Timothy D. Morton",
     author_email = "tim.morton@gmail.com",
     url = "https://github.com/timothydmorton/kepler-rotation",
     packages = find_packages(),
-    package_data = {'keprot':['data/*']},
+    #package_data = {'rotation':['data/*']},
     scripts = ['scripts/prepare_photometry'],
     classifiers=[
       'Development Status :: 3 - Alpha',

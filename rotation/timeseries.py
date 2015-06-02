@@ -16,41 +16,25 @@ from pkg_resources import resource_filename
 
 import logging
 
-from keputils import koiutils as ku
-
 import acor
 
+from .utils import peaks_and_lphs
 from .findpeaks import peakdetect
 
-try:
-    KOI_PHOTOMETRY_DIR = os.environ['KOI_PHOTOMETRY_DIR']
-except KeyError:
-    logging.warning('KOI_PHOTOMETRY_DIR environment variable not defined.')
-    KOI_PHOTOMETRY_DIR = '.'
-
-CADENCE = 0.02043423
-QTIMESFILE = resource_filename('keprot','data/qStartStop.txt')
-QSTART = {}
-QSTOP = {}
-for line in open(QTIMESFILE):
-    line = line.split()
-    if line[0] != 'q':
-        QSTART[int(line[0])] = float(line[1])
-        QSTOP[int(line[0])] = float(line[2])
-
-
-
 class TimeSeries(object):
-    def __init__(self, t, f, mask=None, cadence=CADENCE,
-                 default_maxlag=200//CADENCE):
+    def __init__(self, t, f, mask=None, cadence=None,
+                 default_maxlag_days=200):
         self.t = np.atleast_1d(t)
         self.f = np.atleast_1d(f)
         if mask is None:
             mask = np.isnan(self.f)
         self.mask = mask
 
+        if cadence is None:
+            cadence = np.median(self.t[1:]-self.t[:-1])
         self.cadence = cadence
-        self.default_maxlag = default_maxlag
+        self.default_maxlag_days = default_maxlag_days
+        self.default_maxlag = default_maxlag_days//cadence
 
         #set private variables for cached acorr calculation
         self._lag = None  #always should be in cadences
@@ -88,7 +72,7 @@ class TimeSeries(object):
             self._smooth = smooth
 
         if days:
-            return lag*CADENCE,ac
+            return lag*self.cadence,ac
         else:
             return lag,ac
 
@@ -99,7 +83,7 @@ class TimeSeries(object):
                               lookahead=lookahead)
         
     def plot_acorr(self, days=True, smooth=18, maxlag=None,
-                   mark_period=True, lookahead=5, fit_npeaks=4,
+                   mark_period=False, lookahead=5, fit_npeaks=4,
                    tol=0.2,
                    **kwargs):
 
@@ -269,207 +253,44 @@ class TimeSeries(object):
             f = self.f[tok]
             mask = self.mask[tok]
             self.subseries[name] = TimeSeries(t, f, mask=mask,
-                                              default_maxlag=self.default_maxlag)
+                                              default_maxlag_days=self.default_maxlag_days)
 
 
-class TimeSeries_FromH5(TimeSeries):
-    def __init__(self, filename, path=''):
-
-        self.filename = filename
-        self.path = path
-
-        #store = pd.HDFStore(filename, 'r')
+    @classmethod
+    def load_hdf(cls, filename, path=''):
+        
         data = pd.read_hdf(filename, '{}/data'.format(path))
-        #data = store['{}/data'.format(path)]
         t = np.array(data['t'])
         f = np.array(data['f'])
         mask = np.array(data['mask'])
 
-        TimeSeries.__init__(self, t,f,mask=mask)
+        new = cls(t,f,mask=mask)
 
-        #acorr = store['{}/acorr'.format(path)]
         acorr = pd.read_hdf(filename, '{}/acorr'.format(path))
-        self._lag = np.array(acorr['lag'])
-        self._ac = np.array(acorr['ac'])
+        new._lag = np.array(acorr['lag'])
+        new._ac = np.array(acorr['ac'])
 
-        #pgram = store['{}/pgram'.format(path)]
         pgram = pd.read_hdf(filename, '{}/pgram'.format(path))
-        self._pers = np.array(pgram['period'])
-        self._pgram = np.array(pgram['pgram'])
+        new._pers = np.array(pgram['period'])
+        new._pgram = np.array(pgram['pgram'])
 
         #store.close()
 
         i=1
         has_sub = True
-        self.subseries = {}
+        new.subseries = {}
         while has_sub:
             try:
                 name = 'sub{}'.format(i)
-                self.subseries[name] = TimeSeries_FromH5(filename, path='{}/{}'.format(path,name))
+                new.subseries[name] = cls.load_hdf(filename, path='{}/{}'.format(path,name))
             except KeyError:
                 has_sub = False
             i += 1
-                
 
-class Kepler_TimeSeries_Petigura(TimeSeries):
-    def __init__(self, koi, folder=KOI_PHOTOMETRY_DIR, 
-                 pdc=True, median_window=500, sigclip=7,
-                 mask_transit=True, 
-                 qtr=None,
-                 qmin=3, qmax=15,
-                 **kwargs):
-        """TimeSeries based on Kepler data, as structured in HDF5 files
-        created by Erik Petigura
-        """
-
-        self.koi = ku.koistar(koi)
-        self.folder = folder
-        self.filename = '{}/{}.01.h5'.format(folder,self.koi)
-
-        self.pdc = pdc
-        self.median_window = median_window
-        self.sigclip = sigclip
-
-        if qtr is not None:
-            qmin = qtr
-            qmax = qtr
-
-        self.qmin = qmin
-        self.qmax = qmax
-
-        h5 = h5py.File(self.filename, 'r')
-
-        if pdc:
-            f = h5['pp']['mqcal'][:]['fpdc']
-        else:
-            f = h5['pp']['mqcal'][:]['f']
-
-        mask = h5['pp']['mqcal'][:]['fmask']
-
-        mask = (mask | np.isnan(f))
-
-        t = h5['pp']['mqcal'][:]['t']
-
-        tmin = QSTART[qmin]
-        tmax = QSTOP[qmax]
-        tok = (t > tmin) & (t < tmax)
-
-        f = f[tok]
-        t = t[tok]
-        mask = mask[tok]
-
-        #mask region near any transit.
-        for num in np.arange(0.01,0.1,0.01): #.01 through .09...no 10-planet systems yet...
-            koiname = '{}.{:02n}'.format(self.koi,num*100)
-            try:
-                per,ep = ku.DATA.ix[koiname,['koi_period','koi_time0bk']]
-                dur = ku.DATA.ix[koiname,'koi_duration']/24
-                intransit = np.absolute((t - ep + per/2) % per - per/2) < (dur*0.75)
-                mask = (mask | intransit)
-            except KeyError:
-                pass
-
-        #temporarily zero-out mask, apply median filter, then restore masked values,
-        # and add outliers to mask
-        fmasked = f[mask].copy()
-        f[mask] = 0
-
-        filt = median_filter(f,median_window)
-        absdev = np.absolute(f - filt)
-        filt2 = median_filter(absdev,median_window)
-        
-        f[mask] = fmasked
-        mask = mask | ((absdev-filt2) > sigclip*filt2.std())
+        return new
 
 
-        h5.close()
 
-        TimeSeries.__init__(self, t, f, mask=mask, **kwargs)
-        
-    def make_subseries(self,qlist=[(3,5),(6,8),(9,11),(12,15)]):
-        tlist = [(QSTART[tlo],QSTOP[thi]) for tlo,thi in qlist]
-        #names = ['q{}q{}'.format(tlo,thi) for tlo,thi in qlist]
-        TimeSeries.make_subseries(self, tlist)
-        
-
-def peaks_and_lphs(y, x=None, lookahead=5, return_heights=False):
-    """Returns locations of peaks and corresponding "local peak heights"
-    """
-    if x is None:
-        x = np.arange(len(y))
-
-    maxes, mins = peakdetect(y, x, lookahead=lookahead)
-    maxes = np.array(maxes)
-    mins = np.array(mins)
-    
-    #logging.debug('maxes: {}'.format(maxes))
-
-    #calculate "local heights".  First will always be a minimum.
-    try: #this if maxes and mins are same length 
-        lphs = np.concatenate([((maxes[:-1,1] - mins[:-1,1]) + (maxes[:-1,1] - mins[1:,1]))/2.,
-                               np.array([maxes[-1,1]-mins[-1,1]])])
-    except ValueError: #this if mins have one more
-        lphs = ((maxes[:,1] - mins[:-1,1]) + (maxes[:,1] - mins[1:,1]))/2.
-
-    if return_heights:
-        return maxes[:,0], lphs, maxes[:,1]
-    else:
-        return maxes[:,0], lphs 
-
-    
-
-def acorr_peaks(fs, mask=None, lookahead=5, smooth=18, maxlag=200//CADENCE,
-                return_acorr=False, days=True):
-    """Returns positions of acorr peaks, with corresponding local heights.
-    """
-    fs = np.atleast_1d(fs)
-    if mask is None:
-        mask = self.mask
-    fs[mask] = 0
-    
-    corr = acor.function(fs,maxlag)
-    lag = np.arange(maxlag)
-
-    logging.debug('ac: {}'.format(corr))
-
-    #lag, corr = acorr(fs, mask=mask, maxlag=maxlag)
-    maxes, mins = peakdetect(corr, lag, lookahead=lookahead)
-    maxes = np.array(maxes)
-    mins = np.array(mins)
-
-    logging.debug('maxes: {}'.format(maxes))
-
-    #calculate "local heights".  First will always be a minimum.
-    try: #this if maxes and mins are same length 
-        lphs = np.concatenate([((maxes[:-1,1] - mins[:-1,1]) + (maxes[:-1,1] - mins[1:,1]))/2.,
-                             np.array([maxes[-1,1]-mins[-1,1]])])
-    except ValueError: #this if mins have one more
-        lphs = ((maxes[:,1] - mins[:-1,1]) + (maxes[:,1] - mins[1:,1]))/2.
-
-    if return_acorr:
-        return corr, maxes[:-1,0], lphs[:-1] #leaving off the last one, just in case weirdness...
-    else:
-        return maxes[:-1,0], lphs[:-1] #leaving off the last one, just in case weirdness...
-
-def fit_period(period, peaks, lphs, fit_npeaks=4, tol=0.2):
-    """fits series of fit_npeaks peaks near integer multiples of period to a line
-
-    tol is fractional tolerance in order to select a peak to fit.
-
-    """
-    
-    #identify peaks to use in fit: first 'fit_npeaks' peaks w/in 
-    # 20% of integer multiple of period
-    logging.debug(np.absolute((peaks[:fit_npeaks]/period)/(np.arange(fit_npeaks)+1) - 1))
-    close_peaks = np.absolute((peaks[:fit_npeaks]/period)/(np.arange(fit_npeaks)+1) - 1) < tol
-
-    x = np.arange(fit_npeaks + 1)
-    y = np.concatenate([np.array([0]),peaks[close_peaks]])
-    
-    def resid(a):
-        return y - a*x
-    
-    return leastsq(resid, period, full_output=1)
     
 
 class NoPeakError(Exception):
