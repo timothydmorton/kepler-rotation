@@ -30,13 +30,18 @@ def peaks_and_lphs(y, x=None, lookahead=5, return_heights=False):
             return [], []
     
     logging.debug('maxes: {}'.format(maxes))
-
-    #calculate "local heights".  First will always be a minimum.
+    logging.debug('mins: {}'.format(mins))
+    
+    #calculate "local heights".  First (used to) always be a minimum.
     try: #this if maxes and mins are same length 
         lphs = np.concatenate([((maxes[:-1,1] - mins[:-1,1]) + (maxes[:-1,1] - mins[1:,1]))/2.,
                                np.array([maxes[-1,1]-mins[-1,1]])])
     except ValueError: #this if mins have one more
-        lphs = ((maxes[:,1] - mins[:-1,1]) + (maxes[:,1] - mins[1:,1]))/2.
+        try:
+            lphs = ((maxes[:,1] - mins[:-1,1]) + (maxes[:,1] - mins[1:,1]))/2.
+        except ValueError: # if maxes have one more (drop first max)
+            lphs = np.concatenate([((maxes[1:-1,1] - mins[:-1,1]) + (maxes[1:-1,1] - mins[1:,1]))/2.,
+                               np.array([maxes[-1,1]-mins[-1,1]])])
 
     if return_heights:
         return maxes[:,0], lphs, maxes[:,1]

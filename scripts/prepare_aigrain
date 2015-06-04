@@ -1,0 +1,44 @@
+#!/usr/bin/env python
+
+import numpy as np
+import matplotlib.pyplot as plt
+import sys, os, os.path
+
+import logging
+
+try:
+    aigrain_root = os.environ['AIGRAIN_ROTATION']
+except:
+    logging.critical('Please define AIGRAIN_ROTATION environment variable.  Exiting.')
+    sys.exit(1)
+
+
+from rotation.timeseries import TimeSeries
+
+rootLogger = logging.getLogger()
+rootLogger.setLevel(logging.INFO)
+
+
+import argparse
+
+parser = argparse.ArgumentParser(description='Write .h5 TimeSeries file from Aigrain txt file, with acorr analyzed')
+
+parser.add_argument('stars', nargs='+')
+parser.add_argument('--maxlag', default=100)
+
+args = parser.parse_args()
+
+
+for i in args.stars:
+    i = int(i)
+    datafile = '{}/noise_free/lightcurve_{:04.0f}.txt'.format(aigrain_root,i)
+    t,f = np.loadtxt(datafile, unpack=True)
+    s = TimeSeries(t,f, default_maxlag_days=args.maxlag)    
+
+    h5folder = '{}/noise_free_h5'.format(aigrain_root)
+    if not os.path.exists(h5folder):
+        os.makedirs(h5folder)
+
+    h5file = os.path.join(h5folder,'lightcurve_{:04.0f}.h5'.format(i))
+
+    s.save_hdf(h5file)

@@ -62,6 +62,10 @@ class TimeSeries(object):
             ac = acor.function(x, maxlag)
             lag = np.arange(maxlag)
 
+            #fit and subtract out quadratic
+            c = np.polyfit(lag, ac, 2)
+            ac -= np.polyval(c, lag)
+
             #smooth AC function
             ac = gaussian_filter(ac, smooth)
 
