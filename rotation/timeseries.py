@@ -38,7 +38,8 @@ class TimeSeries(object):
 
         #set private variables for cached acorr calculation
         self._lag = None  #always should be in cadences
-        self._ac = None 
+        self._ac = None
+        self._ac_poly_coeffs = None #polynomial coefficients subtracted out to flatten acorr
 
         #private variables for caching pgram calculation
         self._pers = None
@@ -65,6 +66,7 @@ class TimeSeries(object):
             #fit and subtract out quadratic
             c = np.polyfit(lag, ac, 2)
             ac -= np.polyval(c, lag)
+            self._ac_poly_coeffs = c
 
             #smooth AC function
             ac = gaussian_filter(ac, smooth)
