@@ -15,6 +15,9 @@ def peaks_and_lphs(y, x=None, lookahead=5, return_heights=False):
     maxes = np.array(maxes)
     mins = np.array(mins)
 
+    logging.debug('maxes: {}'.format(maxes))
+    logging.debug('mins: {}'.format(mins))
+    
     if len(maxes) == 0:
         logging.warning('No peaks found in acorr; returning empty')
         if return_heights:
@@ -22,15 +25,27 @@ def peaks_and_lphs(y, x=None, lookahead=5, return_heights=False):
         else:
             return [], []
 
+    n_maxes = maxes.shape[0]
+    n_mins = mins.shape[0]
+
+    #if first extremum is a max, remove it:
+    if maxes[0,0] < mins[0,0]:
+        maxes = maxes[1:,:]
+
+    #if last extremum is a max, remove it:
+    if maxes[-1,0] > mins[-1,0]:
+        maxes = maxes[:-1,:]
+        
+    #this should always work now?
+    lphs = ((maxes[:,1] - mins[:-1,1]) + (maxes[:,1] - mins[1:,1]))/2.
+    
+        
+    """
     if maxes.shape[0]==1:
-        logging.warning('Only one peak found in acorr; returning empty')
         if return_heights:
-            return [], [], []
+            return maxes[:,0], [], []
         else:
             return [], []
-    
-    logging.debug('maxes: {}'.format(maxes))
-    logging.debug('mins: {}'.format(mins))
     
     #calculate "local heights".  First (used to) always be a minimum.
     try: #this if maxes and mins are same length 
@@ -42,6 +57,10 @@ def peaks_and_lphs(y, x=None, lookahead=5, return_heights=False):
         except ValueError: # if maxes have one more (drop first max)
             lphs = np.concatenate([((maxes[1:-1,1] - mins[:-1,1]) + (maxes[1:-1,1] - mins[1:,1]))/2.,
                                np.array([maxes[-1,1]-mins[-1,1]])])
+
+    """
+
+    logging.debug('lphs: {}'.format(lphs))
 
     if return_heights:
         return maxes[:,0], lphs, maxes[:,1]
