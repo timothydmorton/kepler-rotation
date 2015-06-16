@@ -26,6 +26,7 @@ parser = argparse.ArgumentParser(description='Write .h5 TimeSeries file from Aig
 
 parser.add_argument('stars', nargs='+')
 parser.add_argument('--maxlag', default=100)
+parser.add_argument('--recalc', action='store_true')
 
 args = parser.parse_args()
 
@@ -33,18 +34,21 @@ args = parser.parse_args()
 for i in args.stars:
     try:
         i = int(i)
-        datafile = '{}/noise_free/lightcurve_{:04.0f}.txt'.format(aigrain_root,i)
-        t,f = np.loadtxt(datafile, unpack=True)
-        s = TimeSeries(t,f, default_maxlag_days=args.maxlag)    
-
-        h5folder = '{}/noise_free_h5'.format(aigrain_root)
-        if not os.path.exists(h5folder):
-            os.makedirs(h5folder)
-
         h5file = os.path.join(h5folder,'lightcurve_{:04.0f}.h5'.format(i))
 
-        s.save_hdf(h5file)
+        if not os.path.exists(h5file) or args.recalc:
+            
+            datafile = '{}/noise_free/lightcurve_{:04.0f}.txt'.format(aigrain_root,i)
+            t,f = np.loadtxt(datafile, unpack=True)
+            s = TimeSeries(t,f, default_maxlag_days=args.maxlag)    
+
+            h5folder = '{}/noise_free_h5'.format(aigrain_root)
+            if not os.path.exists(h5folder):
+                os.makedirs(h5folder)
+
+
+            s.save_hdf(h5file)
 
     except:
-        logging.error('Error with {}'.format(args.stars),
+        logging.error('Error with {}'.format(i),
                       exc_info=True)
