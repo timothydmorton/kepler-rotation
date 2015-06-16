@@ -15,8 +15,8 @@ def peaks_and_lphs(y, x=None, lookahead=5, return_heights=False):
     maxes = np.array(maxes)
     mins = np.array(mins)
 
-    logging.debug('maxes: {}'.format(maxes))
-    logging.debug('mins: {}'.format(mins))
+    logging.debug('maxes: {0} (shape={0.shape})'.format(maxes))
+    logging.debug('mins: {0} (shape={0.shape})'.format(mins))
     
     if len(maxes) == 0:
         logging.warning('No peaks found in acorr; returning empty')
@@ -28,16 +28,26 @@ def peaks_and_lphs(y, x=None, lookahead=5, return_heights=False):
     n_maxes = maxes.shape[0]
     n_mins = mins.shape[0]
 
-    #if first extremum is a max, remove it:
-    if maxes[0,0] < mins[0,0]:
-        maxes = maxes[1:,:]
+    if n_maxes==1 and n_mins==1:
+            lphs = maxes[0,1] - mins[0,1]
+    else:
+        #if first extremum is a max, remove it:
+        if maxes[0,0] < mins[0,0]:
+            logging.debug('first extremum is a max; removing')
+            maxes = maxes[1:,:]
+            logging.debug('now, maxes: {}'.format(maxes))
+            logging.debug('now, mins: {}'.format(mins))    
 
-    #if last extremum is a max, remove it:
-    if maxes[-1,0] > mins[-1,0]:
-        maxes = maxes[:-1,:]
-        
-    #this should always work now?
-    lphs = ((maxes[:,1] - mins[:-1,1]) + (maxes[:,1] - mins[1:,1]))/2.
+        #if last extremum is a max, remove it:
+        if maxes[-1,0] > mins[-1,0]:
+            logging.debug('last extremum is a max; removing')
+            maxes = maxes[:-1,:]
+            logging.debug('now, maxes: {}'.format(maxes))
+            logging.debug('now, mins: {}'.format(mins))    
+
+
+        #this should always work now?
+        lphs = ((maxes[:,1] - mins[:-1,1]) + (maxes[:,1] - mins[1:,1]))/2.
     
         
     """
