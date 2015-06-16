@@ -23,7 +23,7 @@ from .findpeaks import peakdetect
 
 class TimeSeries(object):
     def __init__(self, t, f, mask=None, cadence=None,
-                 default_maxlag_days=200):
+                 default_maxlag_days=100):
         self.t = np.atleast_1d(t)
         self.f = np.atleast_1d(f)
         if mask is None:
