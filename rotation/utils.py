@@ -29,25 +29,43 @@ def peaks_and_lphs(y, x=None, lookahead=5, return_heights=False):
     n_mins = mins.shape[0]
 
     if n_maxes==1 and n_mins==1:
-            lphs = maxes[0,1] - mins[0,1]
-    else:
-        #if first extremum is a max, remove it:
-        if maxes[0,0] < mins[0,0]:
-            logging.debug('first extremum is a max; removing')
-            maxes = maxes[1:,:]
-            logging.debug('now, maxes: {}'.format(maxes))
-            logging.debug('now, mins: {}'.format(mins))    
+        lphs = maxes[0,1] - mins[0,1]
 
-        #if last extremum is a max, remove it:
-        if maxes[-1,0] > mins[-1,0]:
-            logging.debug('last extremum is a max; removing')
-            maxes = maxes[:-1,:]
-            logging.debug('now, maxes: {}'.format(maxes))
-            logging.debug('now, mins: {}'.format(mins))    
+    elif n_maxes == n_mins+1:
+        lphs = np.concatenate([[maxes[0,1] - mins[0,1]],
+                               ((maxes[1:-1,1] - mins[1:,1]) + (maxes[1:-1,1] - mins[:-1,1]))/2])
+    elif n_mins == n_maxes+1:
+        lphs = ((maxes[:,1] - mins[1:,1]) + (maxes[:1,1] - mins[:-1,1]))
+
+    elif n_maxes == n_mins:
+        if maxes[0,0] < mins[0,0]:
+            lphs = np.concatenate([[maxes[0,1] - mins[0,1]],
+                                  ((maxes[1:,1] - mins[:-1,1]) + (maxes[1:,1] + mins[1:,1]))/2])
+        else:
+            lphs = np.concatenate([((maxes[:-1,1] - mins[:-1,1]) + (maxes[:-1,1] - mins[1:,1]))/2.,
+                                  [maxes[-1,1] - mins[-1,1]]])
+
+
+    else:
+        raise RuntimeError('No cases satisfied??')
+    
+        ##if first extremum is a max, remove it:
+        #if maxes[0,0] < mins[0,0]:
+        #    logging.debug('first extremum is a max; removing')
+        #    maxes = maxes[1:,:]
+        #    logging.debug('now, maxes: {}'.format(maxes))
+        #    logging.debug('now, mins: {}'.format(mins))    
+
+        ##if last extremum is a max, remove it:
+        #if maxes[-1,0] > mins[-1,0]:
+        #    logging.debug('last extremum is a max; removing')
+        #    maxes = maxes[:-1,:]
+        #    logging.debug('now, maxes: {}'.format(maxes))
+        #    logging.debug('now, mins: {}'.format(mins))    
 
 
         #this should always work now?
-        lphs = ((maxes[:,1] - mins[:-1,1]) + (maxes[:,1] - mins[1:,1]))/2.
+        #lphs = ((maxes[:,1] - mins[:-1,1]) + (maxes[:,1] - mins[1:,1]))/2.
     
         
     """

@@ -23,7 +23,8 @@ from .findpeaks import peakdetect
 
 class TimeSeries(object):
     def __init__(self, t, f, mask=None, cadence=None,
-                 default_maxlag_days=100):
+                 default_maxlag_days=200,
+                 flatten_order=2):
         self.t = np.atleast_1d(t)
         self.f = np.atleast_1d(f)
         if mask is None:
@@ -35,7 +36,8 @@ class TimeSeries(object):
         self.cadence = cadence
         self.default_maxlag_days = default_maxlag_days
         self.default_maxlag = default_maxlag_days//cadence
-
+        self.flatten_order = flatten_order
+        
         #set private variables for cached acorr calculation
         self._lag = None  #always should be in cadences
         self._ac = None
@@ -64,9 +66,10 @@ class TimeSeries(object):
             lag = np.arange(maxlag)
 
             #fit and subtract out quadratic
-            c = np.polyfit(lag, ac, 2)
-            ac -= np.polyval(c, lag)
-            self._ac_poly_coeffs = c
+            if self.flatten_order is not None:
+                c = np.polyfit(lag, ac, self.flatten_order)
+                ac -= np.polyval(c, lag)
+                self._ac_poly_coeffs = c
 
             #smooth AC function
             ac = gaussian_filter(ac, smooth)
@@ -243,7 +246,13 @@ class TimeSeries(object):
             for name in self.subseries:
                 self.subseries[name].save_hdf(filename, path=name)
 
-    def make_subseries(self,tlist,names=None):
+    def make_chunks(self, nchunks, chunksize=300, step=100):
+        tmin, tmax = (self.t.min(), self.t.max())
+        tlist = [(t, t+chunksize) for t in np.arange(tmin, tmax+step, step)]
+        logging.debug('(start, stop) tlist: {}'.format(tlist))
+        self.make_subseries(tlist)
+                
+    def make_subseries(self, tlist, names=None):
         """Splits up timeseries into chunks, according to tlist
 
         tlist is a list of (tstart,tstop) tuples.  If names is provided,
